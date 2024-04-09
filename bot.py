@@ -2,8 +2,9 @@ from discord.ext import commands, tasks
 import discord
 import config
 import sqlite3
-import datetime
+from datetime import datetime
 import pytz
+import re
 
 tokyo_tz = pytz.timezone('Asia/Tokyo')
 
@@ -35,7 +36,7 @@ async def send_alarm_message(user_id, channel_id):
 
 @tasks.loop(seconds=30)
 async def alarm():
-    now = datetime.datetime.now(tokyo_tz).strftime('%H:%M')
+    now = datetime.now(tokyo_tz).strftime('%H:%M')
     rows = await bot.loop.run_in_executor(None, fetch_next_alarm, now)
     for row in rows:
         id, user_id, channel_id, time, is_loop = row
@@ -43,7 +44,7 @@ async def alarm():
         if is_loop == 0:
             cur.execute('DELETE FROM times WHERE id = ?',(id,))
             conn.commit()
-            
+
 def fetch_random_food():
     conn = sqlite3.connect('SOUZAI.db')
     cur = conn.cursor()
@@ -69,24 +70,29 @@ async def on_message(message):
     if message.author.bot:
         return
     
-    if message.content.endsswith('&set'):
-            time, is_loop = message.content.replace("&set", "").strip()
-            if time and is_loop:
-                if is_valid_time(time):
-                    if is_valid_is_loop(is_loop):
-                        if is_loop == 'once':
+    if message.content.startswith('&set'):
+        components = message.content.split()
+        if len(components) == 3:
+            _, time_input, loop_input = components
+            if re.match(r'^[0-2][0-9]:[0-5][0-9]$', time_input):
+                try:
+                    datetime.strptime(time_input, "%H:%M")
+                    if loop_input in ['once', 'loop']:
+                        if loop_input == 'once':
                             loop = 0
-                        elif is_loop == 'loop':
+                        else:
                             loop = 1
-                        cur.execute('INSERT INTO times(user_id, channel_id, time, is_loop) VALUES (?, ?, ?, ?)',(message.author.id, message.channel.id, time, loop))
+                        cur.execute('INSERT INTO times(user_id, channel_id, time, is_loop) values(?, ?, ?, ?)',(message.author.id, message.channel.id, time_input, loop))
                         conn.commit()
-                        await message.reply(f"{time}に発表するよ！")
+                        await message.reply(f"{time_input}に好きな総菜を発表するよ！")
                     else:
-                        await message.reply("アラームのセットには、HH:MMの時間とループするかどうかの指定が必要です。\n (例) \n 09:30 once")
-                else:
-                    await message.reply("アラームのセットには、HH:MMの時間とループするかどうかの指定が必要です。\n (例) \n 09:30 once")
+                        await message.reply("ループ指定が不正です。`once` または `loop` を指定してください。")
+                except ValueError:
+                    await message.reply("指定された時間が無効です。")
             else:
-                await message.reply("アラームのセットには、HH:MMの時間とループするかどうかの指定が必要です。\n (例) \n 09:30 once")
+                await message.reply("時間は HH:MM 形式で指定してください。")
+        else:
+            await message.reply("コマンドの形式が正しくありません。`&set HH:MM once|loop` の形式で入力してください。")
             
 def is_valid_time(time):
     try:
