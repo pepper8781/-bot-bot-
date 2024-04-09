@@ -93,6 +93,47 @@ async def on_message(message):
                 await message.reply("時間は HH:MM 形式で指定してください。")
         else:
             await message.reply("コマンドの形式が正しくありません。`&set HH:MM once|loop` の形式で入力してください。")
+
+    if message.content.startswith('&che'):
+        cur.execute('SELECT * FROM times WHERE user_id = ? ORDER BY time ASC', (message.author.id,))
+        rows = cur.fetchall()
+        if rows:
+          messages = [f'<@{message.author.id}>さんのアラーム：']
+          for row in rows:
+            id, user_id, channel_id, time, is_loop = row
+            if is_loop == 0:
+                loop = 'once'
+            else:
+                loop = 'loop'
+            messages.append(f'{id}|{time}|{loop}')
+          await message.channel.send('\n'.join(messages))
+        else:
+          await message.reply("アラームが登録されていません。")
+    
+    if message.content.startswith('&del'):
+        components = message.content.split()
+        if len(components) == 2:
+            _, id = components
+            if id == 'all':
+                cur.execute('DELETE FROM times WHERE user_id = ?',(message.author.id,))
+                conn.commit()
+                await message.reply("削除しました")
+            elif is_halfwidth_number(id):
+                cur.execute('SELECT id FROM times WHERE id = ?', (int(id),))
+                row = cur.fetchone()
+                if row:
+                    cur.execute('DELETE FROM times WHERE id = ?',(int(id),))
+                    conn.commit()
+                    await message.reply("削除しました")
+                else:
+                    await message.reply(f"idが{id}のアラームはありません")
+            else:
+                await message.reply("削除したいidを数字かallで指定してください")
+        else:
+            message.reply("コマンドの形式が正しくありません。`&del int(id)|all` の形式で入力してください。")
+
+def is_halfwidth_number(input_str):
+    return re.fullmatch(r'\d+', input_str) is not None
             
 def is_valid_time(time):
     try:
